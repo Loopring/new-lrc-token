@@ -1,5 +1,5 @@
 {
-  "name": "vite",
+  "name": "lrc",
   "version": "1.0.0",
   "description": "",
   "main": "truffle.js",
@@ -7,19 +7,21 @@
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "truffle": "truffle",
-    "compile": "truffle compile"
+    "test": "truffle test",
+    "compile": "truffle compile",
+    "migrate": "truffle migrate",
+    "ganache": "ganache-cli",
+    "truffle": "truffle"
   },
   "keywords": [
-    "vite",
+    "lrc",
     "ethereum",
     "erc20"
   ],
   "author": "kongliangzhong",
   "license": "ISC",
   "dependencies": {
-    "truffle": "4.1.14",
-    "zeppelin-solidity": "^1.8.0"
+    "ganache-cli": "^6.2.5",
+    "truffle": "^5.0.2"
   }
 }

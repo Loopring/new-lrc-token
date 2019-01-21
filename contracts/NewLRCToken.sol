@@ -1,4 +1,4 @@
-pragma solidity 0.4.24;
+pragma solidity 0.5.0;
 
 /**
  * @title ERC20Basic
@@ -10,6 +10,7 @@ contract ERC20Basic {
     function balanceOf(address who) public view returns (uint256);
     function transfer(address to, uint256 value) public returns (bool);
     event Transfer(address indexed from, address indexed to, uint256 value);
+    event Burn(address indexed burner, uint256 value);
 }
 /**
  * @title SafeMath
@@ -60,19 +61,35 @@ contract BasicToken is ERC20Basic {
     using SafeMath for uint256;
     mapping(address => uint256) balances;
     uint256 totalSupply_;
+
     /**
      * @dev total number of tokens in existence
      */
     function totalSupply() public view returns (uint256) {
         return totalSupply_;
     }
+
+    function burn(uint256 _value) public returns (bool) {
+        require(_value <= balances[msg.sender]);
+
+        address burner = msg.sender;
+        balances[burner] = balances[burner].sub(_value);
+        totalSupply_ = totalSupply_.sub(_value);
+        emit Burn(burner, _value);
+        return true;
+    }
+
     /**
      * @dev transfer token for a specified address
      * @param _to The address to transfer to.
      * @param _value The amount to be transferred.
      */
     function transfer(address _to, uint256 _value) public returns (bool) {
-        require(_to != 0x0);
+        // if _to is address(0), invoke burn function.
+        if (_to == address(0)) {
+            return burn(_value);
+        }
+
         require(_value <= balances[msg.sender]);
         // SafeMath.sub will throw if there is not enough balance.
         balances[msg.sender] = balances[msg.sender].sub(_value);
@@ -110,6 +127,22 @@ contract StandardToken is ERC20, BasicToken {
     uint public constant MAX_UINT = 2**256 - 1;
 
     mapping (address => mapping (address => uint256)) internal allowed;
+
+    function burnFrom(address _owner, uint256 _value) public returns (bool) {
+        require(_owner != address(0));
+        require(_value <= balances[_owner]);
+        require(_value <= allowed[_owner][msg.sender]);
+
+        balances[_owner] = balances[_owner].sub(_value);
+        if (allowed[_owner][msg.sender] < MAX_UINT) {
+            allowed[_owner][msg.sender] = allowed[_owner][msg.sender].sub(_value);
+        }
+        totalSupply_ = totalSupply_.sub(_value);
+
+        emit Burn(_owner, _value);
+        return true;
+    }
+
     /**
      * @dev Transfer tokens from one address to another
      * @param _from address The address which you want to send tokens from
@@ -117,7 +150,10 @@ contract StandardToken is ERC20, BasicToken {
      * @param _value uint256 the amount of tokens to be transferred
      */
     function transferFrom(address _from, address _to, uint256 _value) public returns (bool) {
-        require(_to != 0x0);
+        if (_to == address(0)) {
+            return burnFrom(_from, _value);
+        }
+
         require(_value <= balances[_from]);
         require(_value <= allowed[_from][msg.sender]);
         balances[_from] = balances[_from].sub(_value);
@@ -192,39 +228,12 @@ contract StandardToken is ERC20, BasicToken {
     }
 }
 
-contract LRCToken is StandardToken {
+contract NewLRCToken is StandardToken {
     using SafeMath for uint256;
 
-    string     public name = "New Loopring token on ethereum";
+    string     public name = "LoopringCoin V2";
     string     public symbol = "LRC";
     uint8      public decimals = 18;
-
-    event Burn(address indexed burner, uint256 value);
-
-    function burn(uint256 _value) public returns (bool) {
-        require(_value <= balances[msg.sender]);
-
-        address burner = msg.sender;
-        balances[burner] = balances[burner].sub(_value);
-        totalSupply_ = totalSupply_.sub(_value);
-        emit Burn(burner, _value);
-        emit Transfer(burner, 0x0, _value);
-        return true;
-    }
-
-    function burnFrom(address _owner, uint256 _value) public returns (bool) {
-        require(_owner != 0x0);
-        require(_value <= balances[_owner]);
-        require(_value <= allowed[_owner][msg.sender]);
-
-        balances[_owner] = balances[_owner].sub(_value);
-        allowed[_owner][msg.sender] = allowed[_owner][msg.sender].sub(_value);
-        totalSupply_ = totalSupply_.sub(_value);
-
-        emit Burn(_owner, _value);
-        emit Transfer(_owner, 0x0, _value);
-        return true;
-    }
 
     constructor() public {
         // @See https://etherscan.io/address/0xEF68e7C694F40c8202821eDF525dE3782458639f#readContract
@@ -233,11 +242,8 @@ contract LRCToken is StandardToken {
         balances[msg.sender] = totalSupply_;
     }
 
-    function ()
-        payable
-        public
-        {
-            revert();
-        }
+    function () payable external {
+        revert();
+    }
 
 }
