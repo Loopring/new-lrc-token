@@ -4,10 +4,21 @@
 
 ### compile
 ```
-    truffle compile
+    npm run compile
+```
+
+### migrate
+```
+    npm run migrate
+```
+
+### test
+```
+    npm run test
 ```
 
 ### old LRC token contract address  
+```
     0xEF68e7C694F40c8202821eDF525dE3782458639f
-    
+```    
     
