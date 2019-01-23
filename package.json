@@ -21,7 +21,11 @@
   "author": "kongliangzhong",
   "license": "ISC",
   "dependencies": {
+    "async": "^2.6.1",
     "ganache-cli": "^6.2.5",
-    "truffle": "^5.0.2"
+    "lodash": "^4.17.11",
+    "request-promise": "^4.2.2",
+    "truffle": "^5.0.2",
+    "web3": "^1.0.0-beta.37"
   }
 }

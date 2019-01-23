@@ -24,13 +24,34 @@ contract("BatchTransfer", async (accounts) => {
     assert.equal(lrcToken.address, lrcAddressAfter, "lrcAddress not match");
   });
 
+  it("owner do batch transfer via LrcToken's batchTransfer function", async() => {
+    const users = [];
+    const amounts = [];
+
+    const amountHex = 10e18.toString(16);
+    const amount = web3.utils.toBN(amountHex);
+    for (let i = 0; i < 200; i++) {
+      const newAccount = web3.eth.accounts.create().address;
+      // console.log("newAccount:", newAccount);
+
+      users.push(newAccount);
+      amounts.push(amount);
+    }
+
+    const tx = await lrcToken.batchTransfer(users, amounts, {from: owner});
+    console.log("\x1b[46m%s\x1b[0m", "gas used by token's batchTransfer: " + tx.receipt.gasUsed);
+
+    const balaceX = await lrcToken.balanceOf(users[10]);
+    assert(balaceX.eq(amount), "transfer amount not match");
+  });
+
   it("owner should be able to do batch token transfer", async() => {
     const users = [];
     const amounts = [];
 
     const amountHex = 10e18.toString(16);
     const amount = web3.utils.toBN(amountHex);
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 200; i++) {
       const newAccount = web3.eth.accounts.create().address;
       // console.log("newAccount:", newAccount);
 
