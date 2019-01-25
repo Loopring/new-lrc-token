@@ -11,8 +11,7 @@ const lrcAddr = "0xef68e7c694f40c8202821edf525de3782458639f";
 const lrcToken = new web3.eth.Contract(JSON.parse(lrcAbi), lrcAddr);
 
 let startBlock = 4104040;
-let endBlock = startBlock + 10000;
-const DEST_BLOCK = endBlock;
+let destBlock = 7000000;
 
 async function classifyHolders(allHolders) {
   const plainHolders = [];
@@ -27,7 +26,11 @@ async function classifyHolders(allHolders) {
     }
   };
 
-  for (const holder of allHolders) {
+  for (const [i, holder] of allHolders.entries()) {
+    if (i % 1000 === 0) {
+      console.log(i, "addresses had been classified.");
+    }
+
     if (isContract(holder)) {
       contractHolders.push(holder);
     } else {
@@ -38,11 +41,50 @@ async function classifyHolders(allHolders) {
   return { plainHolders, contractHolders };
 }
 
+async function parseAllHoldersFromEvents() {
+  const allHolders = new Set();
+
+  const getHoldersInBlocks = async (fromBlock, toBlock) => {
+    console.log("get events between block:", fromBlock, toBlock);
+
+    const holders = new Set();
+    const events = await lrcToken.getPastEvents(
+      "Transfer",
+      {
+        fromBlock: fromBlock,
+        toBlock: toBlock
+      }
+    );
+
+    console.log("events size:", events.length);
+
+    events.forEach( e => {
+      holders.add(e.returnValues.from);
+      holders.add(e.returnValues.to);
+    });
+
+    return holders;
+  };
+
+  const step = 1000;
+  for (let i = startBlock; i <= destBlock; i += step) {
+    const holdersInBlocks = await getHoldersInBlocks(i, i + step);
+    holdersInBlocks.forEach(h => allHolders.add(h));
+  }
+
+  return allHolders;
+}
+
+// parse lrc holders from transaction data.
 async function parseAllHolders() {
   let allHolders = new Set();
 
   const parseTokenRecipient = (input) => {
-    return "0x" + input.slice(34, 34 + 40);
+    if (input && input.length >= 74) {
+      return "0x" + input.slice(34, 34 + 40);
+    } else {
+      return "";
+    }
   };
 
   const processBlock = async (blockNumber) => {
@@ -52,8 +94,13 @@ async function parseAllHolders() {
     const blockData = await web3.eth.getBlock(blockNumber, true);
     blockData.transactions.forEach(tx => {
       if (tx.to && tx.to.toLowerCase() === lrcAddr) {
-        holders.add(tx.from);
-        holders.add(parseTokenRecipient(tx.input));
+        if (web3.utils.isAddress(tx.from)) {
+          holders.add(tx.from);
+        }
+        const recipient = parseTokenRecipient(tx.input);
+        if (web3.utils.isAddress(recipient)) {
+          holders.add(recipient);
+        }
       }
     });
     return holders;
@@ -68,27 +115,29 @@ async function parseAllHolders() {
     return holders;
   };
 
-  const batchSize = 1000;
-  const tasks = [];
-  for (let i = startBlock; i <= endBlock; i += batchSize) {
-    const batchStart = i;
-    let batchEnd = batchStart + batchSize;
-    if (batchEnd > endBlock) {
-      batchEnd = endBlock;
-    }
+  allHolders = await processBlocks(startBlock, destBlock);
 
-    console.log("batchStart:", batchStart, "; batchEnd:", batchEnd);
+  // const batchSize = 1000;
+  // const tasks = [];
+  // for (let i = startBlock; i <= endBlock; i += batchSize) {
+  //   const batchStart = i;
+  //   let batchEnd = batchStart + batchSize;
+  //   if (batchEnd > endBlock) {
+  //     batchEnd = endBlock;
+  //   }
 
-    tasks.push(await processBlocks(batchStart, batchEnd));
-  }
+  //   console.log("batchStart:", batchStart, "; batchEnd:", batchEnd);
 
-  console.log("tasks: ", tasks);
+  //   tasks.push(await processBlocks(batchStart, batchEnd));
+  // }
 
-  async.parallel(tasks, function(err, results) {
-    for (const res of results) {
-      allHolders = new Set([...allHolders, ...res]);
-    }
-  });
+  // console.log("tasks: ", tasks);
+
+  // async.parallel(tasks, function(err, results) {
+  //   for (const res of results) {
+  //     allHolders = new Set([...allHolders, ...res]);
+  //   }
+  // });
 
   return allHolders;
 }
@@ -100,7 +149,7 @@ async function getBalanceOfHolders(allHolders) {
   let i = 0;
   for (const addr of allHolders) {
     console.log("query balance of address:", addr);
-    const balance = await lrcToken.methods.balanceOf(addr).call(DEST_BLOCK);
+    const balance = await lrcToken.methods.balanceOf(addr).call(destBlock);
     const balanceStr = balance.toString();
     balanceInfos.push([addr, balanceStr]);
 
@@ -113,8 +162,7 @@ async function getBalanceOfHolders(allHolders) {
   return balanceInfos;
 }
 
-function saveToFile(balanceInfos) {
-  const fileName = "./balanceInfo_" + startBlock + "_" + endBlock + ".csv";
+function saveToFile(balanceInfos, fileName) {
   for (const balanceInfo of balanceInfos) {
     const account = balanceInfo[0];
     const balance = balanceInfo[1].toString();
@@ -124,16 +172,23 @@ function saveToFile(balanceInfos) {
 }
 
 async function main() {
-  console.log("start block:", startBlock, "; endBlock:", endBlock);
+  console.log("start block:", startBlock, "; destBlock:", destBlock);
+  console.log("balance destBlock:", destBlock);
 
-  const allHolders = await parseAllHolders();
+  const allHolders = await parseAllHoldersFromEvents();
   console.log("allHolders size:", allHolders.size);
 
   const classifiedHolders = classifyHolders(allHolders);
   console.log("contractHolders:", classifiedHolders.contractHolders);
 
-  const holdersAndBalances = await getBalanceOfHolders(classifiedHolders.plainHolders);
-  saveToFile(holdersAndBalances);
+  const plainHoldersAndBalances = await getBalanceOfHolders(classifiedHolders.plainHolders);
+  const contractHoldersAndBalances = await getBalanceOfHolders(classifiedHolders.contractHolders);
+
+  const fileNamePlain = "./balances_plain_" + destBlock + ".csv";
+  const fileNameContract = "./balances_contract_" + destBlock + ".csv";
+
+  saveToFile(plainHoldersAndBalances, fileNamePlain);
+  saveToFile(contractHoldersAndBalances, fileNameContract);
 }
 
 main();
