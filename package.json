@@ -22,7 +22,9 @@
   "license": "ISC",
   "dependencies": {
     "async": "^2.6.1",
+    "bluebird": "^3.5.3",
     "ganache-cli": "^6.2.5",
+    "line-reader": "^0.4.0",
     "lodash": "^4.17.11",
     "request-promise": "^4.2.2",
     "truffle": "^5.0.2",

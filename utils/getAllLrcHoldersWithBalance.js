@@ -1,6 +1,8 @@
 const _ = require("lodash");
+const Promise = require("bluebird");
 const async = require("async");
 const fs = require("fs");
+const lineReader = require("line-reader");
 
 const Web3 = require("web3");
 const web3 = new Web3(new Web3.providers.HttpProvider("https://mainnet.infura.io/hM4sFGiBdqbnGTxk5YT2"));
@@ -11,12 +13,11 @@ const lrcAddr = "0xef68e7c694f40c8202821edf525de3782458639f";
 const lrcToken = new web3.eth.Contract(JSON.parse(lrcAbi), lrcAddr);
 
 let startBlock = 4104040;
-let destBlock = 7000000;
+let destBlock = 7127185;
 
-async function classifyHolders(allHolders) {
-  const plainHolders = [];
-  const contractHolders = [];
+const eachLine = Promise.promisify(lineReader.eachLine);
 
+async function classifyHolders(allHoldersFile, plainHoldersFile, contractHoldersFile) {
   const isContract = async (addr) => {
     const code = await web3.eth.getCode(addr);
     if (code && code.length > 2) {
@@ -26,19 +27,21 @@ async function classifyHolders(allHolders) {
     }
   };
 
-  for (const [i, holder] of allHolders.entries()) {
-    if (i % 1000 === 0) {
-      console.log(i, "addresses had been classified.");
-    }
-
-    if (isContract(holder)) {
-      contractHolders.push(holder);
+  let i = 0;
+  await eachLine(allHoldersFile, async function(line) {
+    const addr = line.trim();
+    const isContractAddress = await isContract(addr);
+    if (isContractAddress) {
+      fs.appendFileSync(contractHoldersFile, line + "\n");
     } else {
-      plainHolders.push(holder);
+      fs.appendFileSync(plainHoldersFile, line + "\n");
     }
-  }
 
-  return { plainHolders, contractHolders };
+    i ++;
+    if (i % 1000 === 0) {
+      console.log("", i, "addresses classified.");
+    }
+  });
 }
 
 async function parseAllHoldersFromEvents() {
@@ -66,7 +69,7 @@ async function parseAllHoldersFromEvents() {
     return holders;
   };
 
-  const step = 1000;
+  const step = 10000;
   for (let i = startBlock; i <= destBlock; i += step) {
     const holdersInBlocks = await getHoldersInBlocks(i, i + step);
     holdersInBlocks.forEach(h => allHolders.add(h));
@@ -117,105 +120,62 @@ async function parseAllHolders() {
 
   allHolders = await processBlocks(startBlock, destBlock);
 
-  // const batchSize = 1000;
-  // const tasks = [];
-  // for (let i = startBlock; i <= endBlock; i += batchSize) {
-  //   const batchStart = i;
-  //   let batchEnd = batchStart + batchSize;
-  //   if (batchEnd > endBlock) {
-  //     batchEnd = endBlock;
-  //   }
-
-  //   console.log("batchStart:", batchStart, "; batchEnd:", batchEnd);
-
-  //   tasks.push(await processBlocks(batchStart, batchEnd));
-  // }
-
-  // console.log("tasks: ", tasks);
-
-  // async.parallel(tasks, function(err, results) {
-  //   for (const res of results) {
-  //     allHolders = new Set([...allHolders, ...res]);
-  //   }
-  // });
-
   return allHolders;
 }
 
-async function getBalanceOfHolders(allHolders) {
-  const balanceInfos = [];
-  // console.log("allHolders size:", allHolders.size);
+async function getBalanceOfHolders(addressesFile, destFile) {
+  console.log("query balance:", addressesFile, "->", destFile);
 
   let i = 0;
-  for (const addr of allHolders) {
-    console.log("query balance of address:", addr);
+
+  await eachLine(addressesFile, async function(line) {
+    const addr = line.trim();
     const balance = await lrcToken.methods.balanceOf(addr).call(destBlock);
-    const balanceStr = balance.toString();
-    balanceInfos.push([addr, balanceStr]);
+    if (balance > 0) {
+      const balanceStr = balance.toString();
+      const destLine = addr + "," + balanceStr + "\n";
+      fs.appendFileSync(destFile, destLine);
 
-    i ++;
-    if (i % 10 === 0) {
-      console.log(i, "addresses processed!");
+      i ++;
+      if (i % 1000 === 0) {
+        console.log("query balance:", i, "addresses processed!");
+      }
     }
-  }
-
-  return balanceInfos;
-}
-
-function saveToFile(balanceInfos, fileName) {
-  for (const balanceInfo of balanceInfos) {
-    const account = balanceInfo[0];
-    const balance = balanceInfo[1].toString();
-    const line = account + "," + balance;
-    fs.appendFileSync(fileName, line + "\n");
-  }
+  });
 }
 
 async function main() {
   console.log("start block:", startBlock, "; destBlock:", destBlock);
-  console.log("balance destBlock:", destBlock);
 
   const allHolders = await parseAllHoldersFromEvents();
   console.log("allHolders size:", allHolders.size);
 
-  const classifiedHolders = classifyHolders(allHolders);
-  console.log("contractHolders:", classifiedHolders.contractHolders);
+  const allHoldersFile = "holders_all." + destBlock;
+  allHolders.forEach(h => fs.appendFileSync(allHoldersFile, h + "\n"));
 
-  const plainHoldersAndBalances = await getBalanceOfHolders(classifiedHolders.plainHolders);
-  const contractHoldersAndBalances = await getBalanceOfHolders(classifiedHolders.contractHolders);
+  const plainHoldersFile = "./holders_plain." + destBlock;
+  const contractHoldersFile = "./holders_contract." + destBlock;
 
-  const fileNamePlain = "./balances_plain_" + destBlock + ".csv";
-  const fileNameContract = "./balances_contract_" + destBlock + ".csv";
+  await classifyHolders(allHoldersFile, plainHoldersFile, contractHoldersFile);
 
-  saveToFile(plainHoldersAndBalances, fileNamePlain);
-  saveToFile(contractHoldersAndBalances, fileNameContract);
+  const plainHoldersBalanceFile = "./balances_plain_" + destBlock + ".csv";
+  const contractHoldersBalanceFile = "./balances_contract_" + destBlock + ".csv";
+
+  await getBalanceOfHolders(plainHoldersFile, plainHoldersBalanceFile);
+  await getBalanceOfHolders(contractHoldersFile, contractHoldersBalanceFile);
 }
 
 main();
 
-// async function test() {
-//   const blockNumber = await web3.eth.getBlockNumber();
-//   const blockData = await web3.eth.getBlock(blockNumber, true);
+// async function testGetBalance() {
+//   const addr0 = "0x7B22713f2e818fad945AF5a3618a2814F102cbe0";
+//   const addr = "0x6d4ee35d70ad6331000e370f079ad7df52e75005";
+//   const balance1 = await lrcToken.methods.balanceOf(addr).call(7081231);
+//   const balance2 = await lrcToken.methods.balanceOf(addr).call(7081232);
+//   const balance3 = await lrcToken.methods.balanceOf(addr).call(7081233);
 
-//   const tx = blockData.transactions[0];
-//   console.log("tx:", tx);
+//   console.log(balance1/1e18, balance2/1e18, balance3/1e18);
+
 // }
 
-// async function test2() {
-//   const txHash = "0xf0bdf9abd7ea1faae9a4aa3d01d63bb04c50e05c55d749f55d870472870d6e68";
-//   const tx = await web3.eth.getTransaction(txHash);
-//   console.log("tx", tx);
-
-//   const input = tx.input;
-//   const tokenRecipient = "0x" + tx.input.slice(34, 34 + 40);
-//   console.log("tokenRecipient:", tokenRecipient);
-// }
-
-// test2();
-
-// async function test3() {
-//   const code = await web3.eth.getCode("0x6d4ee35D70AD6331000E370F079aD7df52E75005");
-//   console.log("code:", code);
-// }
-
-// test3();
+// testGetBalance();
