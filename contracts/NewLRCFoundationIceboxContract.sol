@@ -15,20 +15,20 @@
   limitations under the License.
 
 */
-pragma solidity 0.5.3;
+pragma solidity 0.5.2;
 
 /**
  * @title SafeMath
  * @dev Math operations with safety checks that throw on error
  */
 library SafeMath {
-  function mul(uint256 a, uint256 b) internal constant returns (uint256) {
+  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
     uint256 c = a * b;
     assert(a == 0 || c / a == b);
     return c;
   }
 
-  function div(uint256 a, uint256 b) internal constant returns (uint256) {
+  function div(uint256 a, uint256 b) internal pure returns (uint256) {
     // assert(b > 0); // Solidity automatically throws when dividing by 0
     uint256 c = a / b;
     // assert(a == b * c + a % b); // There is no case in which this doesn't hold
@@ -51,31 +51,31 @@ contract Token {
 
     /// @param _owner The address from which the balance will be retrieved
     /// @return The balance
-    function balanceOf(address _owner) constant returns (uint256 balance);
+    function balanceOf(address _owner) view public returns (uint256 balance);
 
     /// @notice send `_value` token to `_to` from `msg.sender`
     /// @param _to The address of the recipient
     /// @param _value The amount of token to be transferred
     /// @return Whether the transfer was successful or not
-    function transfer(address _to, uint256 _value) returns (bool success);
+    function transfer(address _to, uint256 _value) public returns (bool success);
 
     /// @notice send `_value` token to `_to` from `_from` on the condition it is approved by `_from`
     /// @param _from The address of the sender
     /// @param _to The address of the recipient
     /// @param _value The amount of token to be transferred
     /// @return Whether the transfer was successful or not
-    function transferFrom(address _from, address _to, uint256 _value) returns (bool success);
+    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success);
 
     /// @notice `msg.sender` approves `_spender` to spend `_value` tokens
     /// @param _spender The address of the account able to transfer the tokens
     /// @param _value The amount of tokens to be approved for transfer
     /// @return Whether the approval was successful or not
-    function approve(address _spender, uint256 _value) returns (bool success);
+    function approve(address _spender, uint256 _value) public returns (bool success);
 
     /// @param _owner The address of the account owning tokens
     /// @param _spender The address of the account able to transfer the tokens
     /// @return Amount of remaining tokens allowed to spent
-    function allowance(address _owner, address _spender) constant returns (uint256 remaining);
+    function allowance(address _owner, address _spender) view public returns (uint256 remaining);
 
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
     event Approval(address indexed _owner, address indexed _spender, uint256 _value);
@@ -94,8 +94,8 @@ contract NewLRCFoundationIceboxContract {
 
     uint public constant FREEZE_PERIOD = 720 days; // = 2 years
 
-    address public lrcTokenAddress  = 0x0;
-    address public owner            = 0x0;
+    address public lrcTokenAddress;
+    address public owner;
 
     uint public lrcInitialBalance   = 0;
     uint public lrcWithdrawn         = 0;
@@ -113,10 +113,15 @@ contract NewLRCFoundationIceboxContract {
     uint public withdrawId = 0;
     event Withdrawal(uint _withdrawId, uint _lrcAmount);
 
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+
     /// @dev Initialize the contract
     /// @param _lrcTokenAddress LRC ERC20 token address
     /// @param _owner Owner's address
-    function LRCFoundationIceboxContract(address _lrcTokenAddress, address _owner) {
+    constructor(address _lrcTokenAddress, address _owner) public {
         require(_lrcTokenAddress != address(0));
         require(_owner != address(0));
 
@@ -129,27 +134,21 @@ contract NewLRCFoundationIceboxContract {
      */
 
     /// @dev start the program.
-    function start() public {
-        require(msg.sender == owner);
+    function start(uint _startTime) public onlyOwner {
         require(startTime == 0);
 
         lrcInitialBalance = Token(lrcTokenAddress).balanceOf(address(this));
         require(lrcInitialBalance > 0);
 
         lrcUnlockPerMonth = lrcInitialBalance.div(24); // 24 month
-        startTime = now;
+        startTime = _startTime;
 
-        Started(startTime);
+        emit Started(startTime);
     }
 
-
-    function () payable {
-        require(msg.sender == owner);
-        require(msg.value == 0);
-        require(startTime > 0);
+    function withdraw() public onlyOwner {
         require(now > startTime + FREEZE_PERIOD);
-
-        var token = Token(lrcTokenAddress);
+        Token token = Token(lrcTokenAddress);
         uint balance = token.balanceOf(address(this));
         require(balance > 0);
 
@@ -157,17 +156,16 @@ contract NewLRCFoundationIceboxContract {
         if (lrcAmount > 0) {
             lrcWithdrawn += lrcAmount;
 
-            Withdrawal(withdrawId++, lrcAmount);
+            emit Withdrawal(withdrawId++, lrcAmount);
             require(token.transfer(owner, lrcAmount));
         }
     }
-
 
     /*
      * INTERNAL FUNCTIONS
      */
 
-    function calculateLRCUnlockAmount(uint _now, uint _balance) internal returns (uint lrcAmount) {
+    function calculateLRCUnlockAmount(uint _now, uint _balance) internal view returns (uint lrcAmount) {
         uint unlockable = (_now - startTime - FREEZE_PERIOD)
             .div(30 days)
             .mul(lrcUnlockPerMonth) - lrcWithdrawn;
